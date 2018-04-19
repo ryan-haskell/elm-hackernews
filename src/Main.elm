@@ -218,34 +218,6 @@ type alias ItemType =
     String
 
 
-type alias JobItem =
-    { id : ItemId
-    , deleted : Bool
-    , by : Username
-    , time : UnixTime
-    , text : String
-    , dead : Bool
-    , url : String
-    , score : Int
-    , title : String
-    }
-
-
-type alias AskItem =
-    { id : ItemId
-    , deleted : Bool
-    , by : Username
-    , time : UnixTime
-    , text : String
-    , dead : Bool
-    , kids : List ItemId
-    , url : String
-    , score : Int
-    , title : String
-    , descendants : Int
-    }
-
-
 type alias StoryItem =
     { id : ItemId
     , deleted : Bool
@@ -258,45 +230,6 @@ type alias StoryItem =
     , score : Int
     , title : String
     , descendants : Int
-    }
-
-
-type alias CommentItem =
-    { id : ItemId
-    , deleted : Bool
-    , by : Username
-    , time : UnixTime
-    , text : String
-    , dead : Bool
-    , parent : ItemId
-    , kids : List ItemId
-    }
-
-
-type alias PollItem =
-    { id : ItemId
-    , deleted : Bool
-    , by : Username
-    , time : UnixTime
-    , text : String
-    , dead : Bool
-    , kids : List ItemId
-    , score : Int
-    , title : String
-    , parts : List ItemId
-    , descendants : Int
-    }
-
-
-type alias PollOptionItem =
-    { id : ItemId
-    , deleted : Bool
-    , by : Username
-    , time : UnixTime
-    , text : String
-    , dead : Bool
-    , poll : ItemId
-    , score : Int
     }
 
 
@@ -358,6 +291,15 @@ colors =
     }
 
 
+type alias Shadow =
+    { offset : ( Float, Float )
+    , blur : Float
+    , color : Color
+    , size : Float
+    }
+
+
+softShadow : Shadow
 softShadow =
     { offset = ( 0, 2 )
     , blur = 4
