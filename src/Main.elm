@@ -8,22 +8,12 @@ import Element.Background as Background
 import Element.Border as Border
 import Element.Font as Font
 import Element.Input as Input
+import HackerNews
+    exposing
+        ( Story
+        , StoryItems
+        )
 import Html exposing (Html)
-import Http
-import Json.Decode as Decode
-    exposing
-        ( Decoder
-        , bool
-        , int
-        , list
-        , string
-        )
-import Json.Decode.Pipeline
-    exposing
-        ( decode
-        , optional
-        , required
-        )
 import Time
 
 
@@ -37,21 +27,9 @@ main =
         }
 
 
-type alias ItemId =
-    Int
-
-
 type Msg
-    = LoadTopStories (Result Http.Error (List ItemId))
-    | LoadStory ItemId (Result Http.Error StoryItem)
+    = SetTopStories (Result String StoryItems)
     | LoadMoreStories
-
-
-type HackerNewsData a
-    = ReadyToFetch ItemId
-    | Fetching ItemId
-    | Success a
-    | Failure String
 
 
 pageSize : Int
@@ -60,177 +38,39 @@ pageSize =
 
 
 type alias Model =
-    { stories : List (HackerNewsData StoryItem)
+    { storyItems : StoryItems
     }
 
 
 init : ( Model, Cmd Msg )
 init =
-    Model [] ! [ requestTopStories ]
+    Model HackerNews.emptyStories ! [ HackerNews.getTopStories SetTopStories ]
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        LoadTopStories (Ok storyIds) ->
-            let
-                storiesToFetch =
-                    List.take pageSize storyIds
-
-                idsToSave =
-                    List.drop pageSize storyIds
-            in
+        SetTopStories (Ok storyItems) ->
             { model
-                | stories =
-                    List.concat
-                        [ List.map Fetching storiesToFetch
-                        , List.map ReadyToFetch idsToSave
-                        ]
+                | storyItems = storyItems
             }
-                ! List.map requestStory storiesToFetch
+                ! []
 
-        LoadTopStories (Err error) ->
-            { model | stories = [] } ! []
+        SetTopStories (Err error) ->
+            let
+                _ =
+                    Debug.log "SetTopStories" error
+            in
+            model ! []
 
         LoadMoreStories ->
             loadNext pageSize model
 
-        LoadStory id (Ok story) ->
-            { model | stories = List.map (setStory id story) model.stories } ! []
-
-        LoadStory id (Err error) ->
-            { model | stories = List.map (setError id (toString error)) model.stories } ! []
-
 
 loadNext : Int -> Model -> ( Model, Cmd Msg )
 loadNext count model =
-    let
-        ( fetchableItems, fetchedItems ) =
-            List.partition hasItemId model.stories
-
-        itemsToLoad =
-            List.take count fetchableItems
-                |> List.map (getItemId >> Maybe.withDefault 0 >> Fetching)
-
-        idsToLoad =
-            List.map (getItemId >> Maybe.withDefault 0) itemsToLoad
-
-        itemsReadyToFetch =
-            List.drop count fetchableItems
-    in
-    { model
-        | stories = fetchedItems ++ itemsToLoad ++ itemsReadyToFetch
-    }
-        ! List.map requestStory idsToLoad
-
-
-getItemId : HackerNewsData a -> Maybe ItemId
-getItemId data =
-    case data of
-        ReadyToFetch id ->
-            Just id
-
-        Fetching id ->
-            Just id
-
-        Success _ ->
-            Nothing
-
-        Failure _ ->
-            Nothing
-
-
-hasItemId : HackerNewsData a -> Bool
-hasItemId =
-    getItemId >> (/=) Nothing
-
-
-setStory : ItemId -> StoryItem -> HackerNewsData StoryItem -> HackerNewsData StoryItem
-setStory id item data =
-    case data of
-        Fetching itemId ->
-            if itemId == id then
-                Success item
-            else
-                data
-
-        _ ->
-            data
-
-
-setError : ItemId -> String -> HackerNewsData StoryItem -> HackerNewsData StoryItem
-setError id message data =
-    case data of
-        Fetching itemId ->
-            if itemId == id then
-                Failure message
-            else
-                data
-
-        _ ->
-            data
-
-
-requestStory : ItemId -> Cmd Msg
-requestStory id =
-    Http.get
-        ("https://hacker-news.firebaseio.com/v0/item/" ++ toString id ++ ".json")
-        storyItemDecoder
-        |> Http.send (LoadStory id)
-
-
-requestTopStories : Cmd Msg
-requestTopStories =
-    Http.get "https://hacker-news.firebaseio.com/v0/topstories.json" itemIdDecoder
-        |> Http.send LoadTopStories
-
-
-itemIdDecoder : Decode.Decoder (List ItemId)
-itemIdDecoder =
-    Decode.list Decode.int
-
-
-storyItemDecoder : Decoder StoryItem
-storyItemDecoder =
-    decode StoryItem
-        |> required "id" int
-        |> optional "deleted" bool False
-        |> required "by" string
-        |> required "time" int
-        |> optional "text" string ""
-        |> optional "dead" bool False
-        |> optional "kids" (list int) []
-        |> optional "url" string ""
-        |> optional "score" int 0
-        |> optional "title" string ""
-        |> optional "descendants" int 0
-
-
-type alias UnixTime =
-    Int
-
-
-type alias Username =
-    String
-
-
-type alias ItemType =
-    String
-
-
-type alias StoryItem =
-    { id : ItemId
-    , deleted : Bool
-    , by : Username
-    , time : UnixTime
-    , text : String
-    , dead : Bool
-    , kids : List ItemId
-    , url : String
-    , score : Int
-    , title : String
-    , descendants : Int
-    }
+    model
+        ! [ HackerNews.viewMoreStories pageSize model.storyItems SetTopStories ]
 
 
 view : Model -> Html Msg
@@ -241,19 +81,19 @@ view model =
 
 
 page : Model -> Element Msg
-page { stories } =
+page { storyItems } =
     column
         [ Background.color colors.softGray
         ]
         [ viewNavbar
-        , container <| viewStories stories
+        , container <| viewStories (HackerNews.stories storyItems)
         , container <|
             el
                 [ padding 24
                 , width fill
                 ]
             <|
-                if hasMoreStoriesToFetch stories then
+                if HackerNews.hasMoreStories storyItems then
                     Input.button
                         [ centerX
                         , paddingXY 24 12
@@ -267,11 +107,6 @@ page { stories } =
                 else
                     el [ centerX ] (text "That's all the stories!")
         ]
-
-
-hasMoreStoriesToFetch : List (HackerNewsData a) -> Bool
-hasMoreStoriesToFetch =
-    List.any hasItemId
 
 
 type alias Colors =
@@ -332,13 +167,13 @@ viewNavbar =
         ]
 
 
-viewStories : List (HackerNewsData StoryItem) -> Element Msg
+viewStories : List Story -> Element Msg
 viewStories stories =
     column
         [ paddingXY 0 12
         , spacing 12
         ]
-        (List.map viewStory stories)
+        (List.map storyCard stories)
 
 
 container : Element msg -> Element msg
@@ -359,22 +194,6 @@ cardTitle title =
         ]
 
 
-viewStory : HackerNewsData StoryItem -> Element Msg
-viewStory data =
-    case data of
-        ReadyToFetch _ ->
-            disabledCard
-
-        Fetching _ ->
-            loadingCard
-
-        Success story ->
-            storyCard story
-
-        Failure message ->
-            errorCard message
-
-
 date : Int -> String
 date =
     toFloat
@@ -393,7 +212,7 @@ date =
             ]
 
 
-storyCard : StoryItem -> Element Msg
+storyCard : Story -> Element Msg
 storyCard { title, time, by } =
     card [ spacing 8 ]
         [ row
