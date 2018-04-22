@@ -1,11 +1,16 @@
 module HackerNews
     exposing
-        ( Story
-        , StoryItems
-        , emptyStories
-        , getTopStories
-        , hasMoreStories
-        , stories
+        ( Comment
+        , HackerNews
+        , Story
+        , bestStories
+        , fetch
+        , hasMore
+        , items
+        , newsStories
+        , topStories
+        , updateWithError
+        , updateWithItem
         , viewMoreStories
         )
 
@@ -24,6 +29,7 @@ import Json.Decode.Pipeline
         , optional
         , required
         )
+import List.Extra
 import Task exposing (Task)
 
 
@@ -39,13 +45,8 @@ type alias Username =
     String
 
 
-type alias ItemType =
-    String
-
-
 type alias Story =
-    { id : ItemId
-    , deleted : Bool
+    { deleted : Bool
     , by : Username
     , time : UnixTime
     , text : String
@@ -58,10 +59,9 @@ type alias Story =
     }
 
 
-storyItemDecoder : Decoder Story
-storyItemDecoder =
+storyDecoder : Decoder Story
+storyDecoder =
     decode Story
-        |> required "id" int
         |> optional "deleted" bool False
         |> required "by" string
         |> required "time" int
@@ -74,9 +74,8 @@ storyItemDecoder =
         |> optional "descendants" int 0
 
 
-type alias CommentItem =
-    { id : ItemId
-    , deleted : Bool
+type alias Comment =
+    { deleted : Bool
     , by : Username
     , time : UnixTime
     , text : String
@@ -86,10 +85,9 @@ type alias CommentItem =
     }
 
 
-commentItemDecoder : Decoder CommentItem
-commentItemDecoder =
-    decode CommentItem
-        |> required "id" int
+commentDecoder : Decoder Comment
+commentDecoder =
+    decode Comment
         |> optional "deleted" bool False
         |> required "by" string
         |> required "time" int
@@ -117,8 +115,8 @@ itemTask decoder id =
         |> toTask
 
 
-getItem : Decoder a -> ItemId -> (Result String a -> msg) -> Cmd msg
-getItem decoder id msg =
+getItem : Decoder a -> (Result String a -> msg) -> ItemId -> Cmd msg
+getItem decoder msg id =
     itemTask decoder id
         |> Task.attempt msg
 
@@ -131,147 +129,195 @@ getItems decoder ids msg =
 
 
 
--- STORIES
+-- SOURCES
 
 
-type Data a
-    = Unfetched ItemId
-    | Fetched a
+type Source
+    = TopStories
+    | NewsStories
+    | BestStories
 
 
-type StoryItems
-    = StoryItems (List (Data Story))
+topStories : Source
+topStories =
+    TopStories
 
 
-emptyStories : StoryItems
-emptyStories =
-    StoryItems []
+newsStories : Source
+newsStories =
+    NewsStories
 
 
-initializeStoryItems : List ItemId -> StoryItems
-initializeStoryItems ids =
-    StoryItems (List.map Unfetched ids)
+bestStories : Source
+bestStories =
+    BestStories
 
 
-getTopStories : (Result String StoryItems -> msg) -> Cmd msg
-getTopStories msg =
-    Http.get "https://hacker-news.firebaseio.com/v0/topstories.json" (list int)
+sourceUrl : Source -> String
+sourceUrl source =
+    case source of
+        TopStories ->
+            "https://hacker-news.firebaseio.com/v0/topstories.json"
+
+        NewsStories ->
+            "https://hacker-news.firebaseio.com/v0/newsstories.json"
+
+        BestStories ->
+            "https://hacker-news.firebaseio.com/v0/beststories.json"
+
+
+fetch : Source -> (Result String (List (HackerNews a)) -> msg) -> Cmd msg
+fetch source msg =
+    Http.get (sourceUrl source) (list int)
         |> toTask
-        |> Task.map initializeStoryItems
-        |> Task.andThen (viewMoreStoriesTask 10)
+        |> Task.map (List.map init)
         |> Task.attempt msg
 
 
-idFromItem : Data a -> Maybe ItemId
-idFromItem item =
-    case item of
-        Unfetched id ->
-            Just id
 
-        Fetched _ ->
+-- HackerNews
+
+
+type RemoteData a
+    = Ready
+    | Loading
+    | Success a
+    | Failure String
+
+
+type HackerNews a
+    = HackerNews ItemId (RemoteData a)
+
+
+
+-- Setting state of HackerNews
+
+
+init : ItemId -> HackerNews a
+init id =
+    HackerNews id Ready
+
+
+load : HackerNews a -> HackerNews a
+load (HackerNews id _) =
+    HackerNews id Loading
+
+
+success : a -> HackerNews a -> HackerNews a
+success data (HackerNews id _) =
+    HackerNews id (Success data)
+
+
+failure : String -> HackerNews a -> HackerNews a
+failure reason (HackerNews id _) =
+    HackerNews id (Failure reason)
+
+
+
+-- Getting information from HackerNews
+
+
+id : HackerNews a -> ItemId
+id (HackerNews id _) =
+    id
+
+
+item : HackerNews a -> Maybe a
+item (HackerNews _ data) =
+    case data of
+        Ready ->
+            Nothing
+
+        Loading ->
+            Nothing
+
+        Success item ->
+            Just item
+
+        Failure _ ->
             Nothing
 
 
-type alias Identifiable a =
-    { a | id : ItemId }
+items : List (HackerNews a) -> List a
+items =
+    List.filterMap item
 
 
-setFetchedItem : Identifiable a -> Data (Identifiable a) -> Data (Identifiable a)
-setFetchedItem item data =
-    case data of
-        Unfetched id ->
-            if item.id == id then
-                Fetched item
-            else
-                data
-
-        Fetched _ ->
-            data
+hasMore : List (HackerNews a) -> Bool
+hasMore =
+    List.any isReady
 
 
-replaceUnfetchedItems : List (Data (Identifiable a)) -> List (Identifiable a) -> List (Data (Identifiable a))
-replaceUnfetchedItems initialItems identifiableItems =
-    List.map
-        (\data ->
-            case data of
-                Unfetched id ->
-                    case
-                        List.head
-                            (List.filter
-                                (\item -> item.id == id)
-                                identifiableItems
-                            )
-                    of
-                        Just item ->
-                            Fetched item
-
-                        Nothing ->
-                            data
-
-                Fetched item ->
-                    data
-        )
-        initialItems
-
-
-viewMoreStoriesTask : Int -> StoryItems -> Task String StoryItems
-viewMoreStoriesTask count (StoryItems items) =
-    items
-        |> List.filterMap idFromItem
-        |> List.take count
-        |> List.map (itemTask storyItemDecoder)
-        |> Task.sequence
-        |> Task.map (replaceUnfetchedItems items)
-        |> Task.map StoryItems
-
-
-viewMoreStories : Int -> StoryItems -> (Result String StoryItems -> msg) -> Cmd msg
-viewMoreStories count storyItems msg =
-    viewMoreStoriesTask count storyItems
-        |> Task.attempt msg
-
-
-getStory : (Result String Story -> msg) -> ItemId -> Cmd msg
-getStory msg id =
-    getItem storyItemDecoder id msg
-
-
-stories : StoryItems -> List Story
-stories (StoryItems items) =
-    List.filterMap
-        (\data ->
-            case data of
-                Unfetched _ ->
-                    Nothing
-
-                Fetched item ->
-                    Just item
-        )
-        items
-
-
-hasMoreStories : StoryItems -> Bool
-hasMoreStories (StoryItems items) =
-    List.any
-        (\data ->
-            case data of
-                Unfetched _ ->
-                    True
-
-                Fetched _ ->
-                    False
-        )
-        items
+isReady : HackerNews a -> Bool
+isReady (HackerNews _ status) =
+    status == Ready
 
 
 
--- COMMENTS
+-- Fetching items
 
 
-type alias ItemWithComments a =
-    { a | kids : List ItemId }
+pageSize : Int
+pageSize =
+    10
 
 
-getComments : ItemWithComments a -> (Result String (List CommentItem) -> msg) -> Cmd msg
-getComments { kids } =
-    getItems commentItemDecoder kids
+listSplit : Int -> List a -> ( List a, List a )
+listSplit count list =
+    ( List.take count list
+    , List.drop count list
+    )
+
+
+viewMore : Decoder a -> List (HackerNews a) -> (ItemId -> Result String a -> msg) -> ( List (HackerNews a), Cmd msg )
+viewMore decoder list msg =
+    let
+        ( ready, notReady ) =
+            List.partition isReady list
+
+        ( toFetch, toKeep ) =
+            listSplit pageSize ready
+
+        cmds =
+            toFetch
+                |> List.map id
+                |> List.map (\id -> getItem decoder (msg id) id)
+
+        loadingFetchedThings =
+            toFetch
+                |> List.map load
+    in
+    List.concat
+        [ notReady
+        , loadingFetchedThings
+        , toKeep
+        ]
+        ! cmds
+
+
+viewMoreStories : List (HackerNews Story) -> (ItemId -> Result String Story -> msg) -> ( List (HackerNews Story), Cmd msg )
+viewMoreStories =
+    viewMore storyDecoder
+
+
+
+-- Update in place
+
+
+matchesId : ItemId -> HackerNews a -> Bool
+matchesId id (HackerNews itemId _) =
+    id == itemId
+
+
+updateWithItem : ( ItemId, a ) -> List (HackerNews a) -> List (HackerNews a)
+updateWithItem ( id, item ) =
+    List.Extra.replaceIf
+        (matchesId id)
+        (HackerNews id (Success item))
+
+
+updateWithError : ( ItemId, String ) -> List (HackerNews a) -> List (HackerNews a)
+updateWithError ( id, reason ) =
+    List.Extra.replaceIf
+        (matchesId id)
+        (HackerNews id (Failure reason))

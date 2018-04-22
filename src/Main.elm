@@ -10,8 +10,9 @@ import Element.Font as Font
 import Element.Input as Input
 import HackerNews
     exposing
-        ( Story
-        , StoryItems
+        ( HackerNews
+        , Story
+        , topStories
         )
 import Html exposing (Html)
 import Time
@@ -28,49 +29,50 @@ main =
 
 
 type Msg
-    = SetTopStories (Result String StoryItems)
+    = InitializeTopStories (Result String (List (HackerNews Story)))
+    | AddTopStory Int (Result String Story)
     | LoadMoreStories
 
 
-pageSize : Int
-pageSize =
-    10
-
-
 type alias Model =
-    { storyItems : StoryItems
+    { topStories : List (HackerNews Story)
     }
 
 
 init : ( Model, Cmd Msg )
 init =
-    Model HackerNews.emptyStories ! [ HackerNews.getTopStories SetTopStories ]
+    Model [] ! [ HackerNews.fetch topStories InitializeTopStories ]
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        SetTopStories (Ok storyItems) ->
-            { model
-                | storyItems = storyItems
-            }
-                ! []
+        InitializeTopStories (Ok topStories) ->
+            loadNext { model | topStories = topStories }
 
-        SetTopStories (Err error) ->
+        InitializeTopStories (Err error) ->
             let
                 _ =
                     Debug.log "SetTopStories" error
             in
             model ! []
 
+        AddTopStory id (Ok story) ->
+            { model | topStories = HackerNews.updateWithItem ( id, story ) model.topStories } ! []
+
+        AddTopStory id (Err reason) ->
+            { model | topStories = HackerNews.updateWithError ( id, reason ) model.topStories } ! []
+
         LoadMoreStories ->
-            loadNext pageSize model
+            loadNext model
 
 
-loadNext : Int -> Model -> ( Model, Cmd Msg )
-loadNext count model =
-    model
-        ! [ HackerNews.viewMoreStories pageSize model.storyItems SetTopStories ]
+loadNext : Model -> ( Model, Cmd Msg )
+loadNext model =
+    HackerNews.viewMoreStories model.topStories AddTopStory
+        |> (\( topStories, cmds ) ->
+                ( { model | topStories = topStories }, cmds )
+           )
 
 
 view : Model -> Html Msg
@@ -81,19 +83,19 @@ view model =
 
 
 page : Model -> Element Msg
-page { storyItems } =
+page { topStories } =
     column
         [ Background.color colors.softGray
         ]
         [ viewNavbar
-        , container <| viewStories (HackerNews.stories storyItems)
+        , container <| viewStories (HackerNews.items topStories)
         , container <|
             el
                 [ padding 24
                 , width fill
                 ]
             <|
-                if HackerNews.hasMoreStories storyItems then
+                if HackerNews.hasMore topStories then
                     Input.button
                         [ centerX
                         , paddingXY 24 12
