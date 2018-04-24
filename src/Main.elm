@@ -181,25 +181,25 @@ viewStories stories =
         (List.indexedMap storyCard stories)
 
 
-containerWidth : Attribute msg
-containerWidth =
-    width <|
-        fillPortionBetween
-            { portion = 100000
-            , min = Nothing
-            , max = Just 512
-            }
+spacer : Element msg
+spacer =
+    el [ width <| fillPortion 1 ] empty
 
 
 container : Element msg -> Element msg
 container child =
     row [ width fill ]
-        [ el [ width <| fillPortion 1 ] empty
+        [ spacer
         , el
-            [ containerWidth
+            [ width <|
+                fillPortionBetween
+                    { portion = 100000
+                    , min = Nothing
+                    , max = Just 512
+                    }
             ]
             child
-        , el [ width <| fillPortion 1 ] empty
+        , spacer
         ]
 
 
