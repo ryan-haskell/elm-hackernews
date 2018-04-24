@@ -178,7 +178,7 @@ viewStories stories =
         [ paddingXY 0 12
         , spacing 12
         ]
-        (List.indexedMap storyCard stories)
+        (List.indexedMap story stories)
 
 
 spacer : Element msg
@@ -242,8 +242,8 @@ paddingRight num =
         }
 
 
-storyCard : Int -> Story -> Element Msg
-storyCard index { title, time, by, score } =
+story : Int -> Story -> Element Msg
+story index { title, time, by, score } =
     card
         [ spacing 8
         , padding 24
