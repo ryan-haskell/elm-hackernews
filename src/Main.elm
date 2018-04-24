@@ -175,8 +175,8 @@ viewNavbar =
 viewStories : List Story -> Element Msg
 viewStories stories =
     column
-        [ paddingXY 0 12
-        , spacing 12
+        [
+
         ]
         (List.indexedMap story stories)
 
@@ -333,7 +333,7 @@ card : List (Attribute msg) -> List (Element msg) -> Element msg
 card attrs children =
     column
         ([ Background.color colors.white
-         , Border.shadow softShadow
+
          , paddingXY 16 28
          , height shrink
          , Font.size 18
