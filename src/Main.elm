@@ -155,17 +155,20 @@ viewNavbar =
         , width fill
         ]
         [ container <|
-            link []
-                { url = "/"
-                , label =
-                    image
-                        [ width (px 32)
-                        , height (px 32)
-                        ]
-                        { src = "/logo.svg"
-                        , description = "Elm logo"
-                        }
-                }
+            row []
+                [ link [ alignLeft ]
+                    { url = "/"
+                    , label =
+                        image
+                            [ width (px 32)
+                            , height (px 32)
+                            ]
+                            { src = "/logo.svg"
+                            , description = "Elm logo"
+                            }
+                    }
+                , el [ alignRight ] (text "top")
+                ]
         ]
 
 
@@ -175,14 +178,28 @@ viewStories stories =
         [ paddingXY 0 12
         , spacing 12
         ]
-        (List.map storyCard stories)
+        (List.indexedMap storyCard stories)
+
+
+containerWidth : Attribute msg
+containerWidth =
+    width <|
+        fillPortionBetween
+            { portion = 100000
+            , min = Nothing
+            , max = Just 512
+            }
 
 
 container : Element msg -> Element msg
-container =
-    el
-        [ centerX
-        , width <| fillBetween { min = Nothing, max = Just 640 }
+container child =
+    row [ width fill ]
+        [ el [ width <| fillPortion 1 ] empty
+        , el
+            [ containerWidth
+            ]
+            child
+        , el [ width <| fillPortion 1 ] empty
         ]
 
 
@@ -191,6 +208,7 @@ cardTitle title =
     paragraph
         [ Font.size 20
         , Font.semiBold
+        , Font.color Color.darkOrange
         ]
         [ text title
         ]
@@ -202,10 +220,10 @@ date =
         >> (*) Time.second
         >> Date.fromTime
         >> DateFormat.format
-            [ DateFormat.monthNameFull
-            , DateFormat.text " "
-            , DateFormat.dayOfMonthSuffix
-            , DateFormat.text " - "
+            [ DateFormat.monthNumber
+            , DateFormat.text "/"
+            , DateFormat.dayOfMonthNumber
+            , DateFormat.text ", "
             , DateFormat.hourNumber
             , DateFormat.text ":"
             , DateFormat.minuteFixed
@@ -214,17 +232,76 @@ date =
             ]
 
 
-storyCard : Story -> Element Msg
-storyCard { title, time, by } =
-    card [ spacing 8 ]
+paddingRight : Int -> Attribute msg
+paddingRight num =
+    paddingEach
+        { bottom = 0
+        , left = 0
+        , right = num
+        , top = 0
+        }
+
+
+storyCard : Int -> Story -> Element Msg
+storyCard index { title, time, by, score } =
+    card
+        [ spacing 8
+        , padding 24
+        , onLeft <|
+            el
+                [ paddingRight 16
+                , Font.color colors.shadow
+                , Font.size 24
+                , Font.semiBold
+                , centerY
+                ]
+                (text <| toString (index + 1))
+        ]
         [ row
-            [ Font.size 16
-            , Font.color Color.darkCharcoal
+            [ spacing 24 ]
+            [ column
+                [ spacing 8
+                ]
+                [ cardTitle title
+                , row
+                    [ Font.size 16
+                    , Font.color Color.darkCharcoal
+                    ]
+                    [ row
+                        [ alignLeft
+                        ]
+                        [ el [] (text by)
+                        , text <| " - " ++ date time
+                        ]
+                    ]
+                ]
+            , el
+                [ width shrink
+                , paddingXY 0 4
+                ]
+                (viewScore score)
             ]
-            [ el [ alignLeft ] (text by)
-            , el [ alignRight ] (text <| date time)
+        ]
+
+
+viewScore : Int -> Element msg
+viewScore score =
+    column
+        [ height shrink, centerY ]
+        [ el
+            [ Font.color Color.charcoal
+            , Font.semiBold
+            , Font.size 12
+            , centerX
             ]
-        , cardTitle title
+            (text <| String.toUpper "Score")
+        , el
+            [ Font.color Color.charcoal
+            , Font.size 24
+            , Font.semiBold
+            , centerX
+            ]
+            (text <| toString score)
         ]
 
 
